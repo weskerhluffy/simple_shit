@@ -566,7 +566,7 @@ void phi_euler_divisible_encontrado_cb(natural primo, natural idx_primo,
 	caca_log_debug("phi de %u es %u", nuevo_comp, d->phi[nuevo_comp]);
 }
 
-phi_euler_no_divisible_encontrado_cb(natural primo, natural idx_primo,
+void phi_euler_no_divisible_encontrado_cb(natural primo, natural idx_primo,
 		natural compuesto, void *cb_ctx) {
 	phi_euler_datos *d = cb_ctx;
 	natural nuevo_comp = compuesto * primo;
@@ -580,58 +580,61 @@ phi_euler_no_divisible_encontrado_cb(natural primo, natural idx_primo,
 typedef struct simple_shit_datos {
 	entero_largo ss[PHI_EULER_MAX_CACA + 1];
 	phi_euler_datos *pd;
+	phi_euler_datos pd_storage;
 } simple_shit_datos;
 CACA_COMUN_FUNC_STATICA natural simple_shit_calcula_potencia_primo(
 		entero_largo n, natural p) {
 	natural i = 0;
+	natural n_orig = n;
 	while (!(n % p)) {
 		n /= p;
 		i++;
 	}
-	caca_log_debug("potencia primo de %u en %u es %u", p, n, i);
+	caca_log_debug("potencia primo de %u en %u es %u", p, n_orig, i);
 	return i;
 }
 
 CACA_COMUN_FUNC_STATICA natural simple_shit_obten_contribucion_primo_a_suma_divisores(
-		entero_largo n, natural p) {
+		entero_largo n, natural p, natural *potencia_primo) {
 	natural pot_primo = simple_shit_calcula_potencia_primo(n, p);
-	natural contri = 1;
-	for (natural i = 0; i < pot_primo; i++) {
-		contri += 1 + p * contri;
+	natural contri = 0;
+	for (natural i = 0; i <= pot_primo; i++) {
+		contri += pow(p, i << 1);
 	}
 	caca_log_debug("contribucion de primo de %u en %u es %u", p, n, contri);
+	if (potencia_primo) {
+		*potencia_primo = pot_primo;
+	}
 	return contri;
 }
 
 CACA_COMUN_FUNC_STATICA entero_largo simple_shit_incrementa_potencia_primo_en_suma_divisores(
 		entero_largo suma_divisores, natural n, natural p) {
-	natural contri = simple_shit_obten_contribucion_primo_a_suma_divisores(n,
-			p);
-	entero_largo complemento_suma_divisores = suma_divisores
-			/ (contri * contri);
+	natural pot_primo = 0;
+	natural contri = simple_shit_obten_contribucion_primo_a_suma_divisores(n, p,
+			&pot_primo);
+	entero_largo complemento_suma_divisores = suma_divisores / contri;
 	caca_log_debug("complemento de %lld es %lld", suma_divisores,
 			complemento_suma_divisores);
-	entero_largo contri_nueva = 1 + p * contri;
-	caca_log_debug("contribucion nuevo de %p es %lld", p, contri_nueva);
-	contri_nueva *= contri_nueva;
-	caca_log_debug("contribucion cuadrada %lld", contri_nueva);
-	return complemento_suma_divisores * contri_nueva;
+	entero_largo sumando_nuevo_de_contribucion = pow(p, (pot_primo + 1) << 1);
+	caca_log_debug("sumando nuevo de %u es %lld", p,
+			sumando_nuevo_de_contribucion);
+	entero_largo nueva_contribucion = contri + sumando_nuevo_de_contribucion;
+	caca_log_debug("nueva contri %llu", nueva_contribucion);
+	return nueva_contribucion * complemento_suma_divisores;
 }
 
 CACA_COMUN_FUNC_STATICA entero_largo simple_shit_anade_primo_en_suma_divisores(
-		entero_largo suma_divisores, natural p) {
-	entero_largo contri_nueva = 1 + p;
+		entero_largo suma_divisores, natural p, natural suma_divisores_primo) {
+	entero_largo contri_nueva = suma_divisores_primo;
 	caca_log_debug("contribucion primo anadido %u es %lld", p, contri_nueva);
-	contri_nueva *= contri_nueva;
-	caca_log_debug("contribucion cuadrada %lld", contri_nueva);
 	return contri_nueva * suma_divisores;
 }
 
 void simple_shit_primo_encontrado_cb(natural primo, natural idx_primo,
 		void *cb_ctx) {
 	simple_shit_datos *d = cb_ctx;
-	d->ss[primo] = (1 + primo);
-	d->ss[primo] *= d->ss[primo];
+	d->ss[primo] = 1 + primo * primo;
 	caca_log_debug("ss primo %u es %lld", primo, d->ss[primo]);
 }
 
@@ -639,6 +642,7 @@ void simple_shit_divisible_encontrado_cb(natural primo, natural idx_primo,
 		natural compuesto, void *cb_ctx) {
 	simple_shit_datos *d = cb_ctx;
 	entero_largo nuevo_comp = compuesto * primo;
+	caca_log_debug("nuevo comp %u de %u y %u", nuevo_comp, primo, compuesto);
 	d->ss[nuevo_comp] = simple_shit_incrementa_potencia_primo_en_suma_divisores(
 			d->ss[compuesto], compuesto, primo);
 	caca_log_debug("ss div enc %u es %lld", nuevo_comp, d->ss[nuevo_comp]);
@@ -649,13 +653,14 @@ void simple_shit_no_divisible_encontrado_cb(natural primo, natural idx_primo,
 	simple_shit_datos *d = cb_ctx;
 	entero_largo nuevo_comp = compuesto * primo;
 	d->ss[nuevo_comp] = simple_shit_anade_primo_en_suma_divisores(
-			d->ss[compuesto], primo);
+			d->ss[compuesto], primo, d->ss[primo]);
 	caca_log_debug("ss no div enc %u es %lld", nuevo_comp, d->ss[nuevo_comp]);
 }
 
 CACA_COMUN_FUNC_STATICA entero_largo simple_shit_core(natural n,
 		simple_shit_datos *sd, phi_euler_datos *pd) {
 	entero_largo r = sd->ss[n] * pd->phi[n] / n;
+	caca_log_debug("de %u ss %llu phi %u", n, sd->ss[n], pd->phi[n]);
 	caca_log_debug("r de %u es %lld", n, r);
 	return r;
 }
@@ -687,19 +692,36 @@ void simple_shit_no_divisible_encontrado_conjunto_cb(natural primo,
 void simple_shit_primo_encontrado_conjunto_cb(natural primo, natural idx_primo,
 		void *cb_ctx) {
 	simple_shit_datos *sd = cb_ctx;
-	phi_euler_primo_encontrado_cb(primos_caca_tam, idx_primo, sd->pd);
+	caca_log_debug("primo enc %u", primo);
+	phi_euler_primo_encontrado_cb(primo, idx_primo, sd->pd);
 	simple_shit_primo_encontrado_cb(primo, idx_primo, cb_ctx);
 }
 
 CACA_COMUN_FUNC_STATICA void simple_shit_main() {
 	simple_shit_datos *d = NULL;
+	natural t = 0;
+	natural n = 0;
 
 	d = calloc(1, sizeof(simple_shit_datos));
 	assert_timeout(d);
+	d->pd = &d->pd_storage;
+	d->pd->phi[1] = 1;
+	d->ss[1] = 1;
 
 	primos_caca_criba(PRIMOS_CACA_MAX, simple_shit_primo_encontrado_conjunto_cb,
 	NULL, simple_shit_divisible_encontrado_conjunto_cb,
 			simple_shit_no_divisible_encontrado_conjunto_cb, d);
+
+	scanf("%u", &t);
+	while (t--) {
+		scanf("%u", &n);
+		n = 10;
+		entero_largo r = simple_shit_core(n, d, d->pd);
+		entero_largo rr = simple_shit_fuerza_bruta(n);
+		caca_log_debug("r %llu rr %llu", r, rr);
+		assert_timeout(r == rr);
+	}
+
 }
 
 #endif
